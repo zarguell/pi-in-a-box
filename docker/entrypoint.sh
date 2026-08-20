@@ -2,7 +2,7 @@
 # =============================================================================
 # pi-in-a-box — Container Entrypoint
 # =============================================================================
-set -euo pipefail
+set -uo pipefail
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -11,27 +11,40 @@ PIAB_PORT="${PIAB_PORT:-8000}"
 PIAB_PI_HOME="${PIAB_PI_HOME:-/data/pi-home}"
 PIAB_BROWSER_ENABLED="${PIAB_BROWSER_ENABLED:-false}"
 PIAB_WORKSPACE="${PIAB_WORKSPACE:-/workspace}"
+# Bind host for the dashboard server. Defaults to loopback to preserve the
+# upstream "bound to loopback by default" security posture; set to 0.0.0.0 when
+# the dashboard sits behind a same-host / network reverse proxy (e.g. traefik).
+PIAB_BIND_HOST="${PIAB_BIND_HOST:-127.0.0.1}"
+# Public base URL the dashboard advertises to its clients (the URL a browser
+# actually reaches it on). Required when fronted by a reverse proxy that
+# terminates TLS on a different port (e.g. https://pi.example.com:443 while the
+# server listens on :8000). Seed pairing.publicBaseUrls so the client connects
+# through the proxy instead of the internal :<port>.
+PIAB_PUBLIC_URL="${PIAB_PUBLIC_URL:-}"
 
 # Ensure HOME points to persistent storage
 export HOME="${PIAB_PI_HOME}"
 export PI_HOME="${PIAB_PI_HOME}"
 
+# Dashboard runtime user created in the Dockerfile (ARG PUID/PGID, default 1001)
+PI_USER="piuser"
+
 # ---------------------------------------------------------------------------
-# Signal handling — forward SIGTERM/SIGINT to child process
+# Signal handling — forward SIGTERM/SIGINT to the dashboard child
 # ---------------------------------------------------------------------------
+DASHBOARD_PID=""
 cleanup() {
     echo "[pi-in-a-box] Received shutdown signal, stopping..."
-    if [[ -n "${DASHBOARD_PID:-}" ]]; then
+    if [[ -n "${DASHBOARD_PID}" ]]; then
         kill -TERM "${DASHBOARD_PID}" 2>/dev/null || true
         wait "${DASHBOARD_PID}" 2>/dev/null || true
     fi
-    echo "[pi-in-a-box] Shutdown complete."
     exit 0
 }
 trap cleanup SIGTERM SIGINT
 
 # ---------------------------------------------------------------------------
-# Ensure persistent directories are writable
+# Ensure persistent directories are writable by the dashboard user
 # ---------------------------------------------------------------------------
 ensure_dirs() {
     local dirs=(
@@ -50,9 +63,9 @@ ensure_dirs() {
 
     for dir in "${dirs[@]}"; do
         mkdir -p "${dir}"
-        # Best-effort chown: named volumes may have root-owned files from build.
-        # The container user can read them; chown errors are non-fatal.
-        chown -R "$(id -u):$(id -g)" "${dir}" 2>/dev/null || true
+        # Chown to the dashboard user (NOT root). The dashboard drops to this
+        # user before writing, so root-owned dirs cause EACCES on first write.
+        chown -R "${PI_USER}:${PI_USER}" "${dir}" 2>/dev/null || true
     done
 }
 
@@ -65,27 +78,47 @@ configure_pi() {
 
     mkdir -p "${settings_dir}"
 
-    # Write settings.json if it doesn't exist
     if [[ ! -f "${settings_file}" ]]; then
         cat > "${settings_file}" <<'SETTINGS'
 {
   "packages": []
 }
 SETTINGS
-        echo "[pi-in-a-box] Created default Pi settings."
-    fi
-
-    # Set the working directory for Pi sessions
-    if [[ -d "${PIAB_WORKSPACE}" ]]; then
-        cd "${PIAB_WORKSPACE}" || true
+        chown "${PI_USER}:${PI_USER}" "${settings_file}" 2>/dev/null || true
     fi
 }
 
 # ---------------------------------------------------------------------------
-# Start dashboard
+# Seed the dashboard's public base URL so the client connects through the
+# reverse proxy (https://host:443) rather than the internal :<port>.
+# ---------------------------------------------------------------------------
+seed_public_url() {
+    [[ -z "${PIAB_PUBLIC_URL}" ]] && return 0
+
+    local config_dir="${PIAB_PI_HOME}/.pi/dashboard"
+    local config_file="${config_dir}/config.json"
+    mkdir -p "${config_dir}"
+    export CONFIG_FILE="${config_file}"
+
+    node -e '
+      const fs = require("fs");
+      const p = process.env.CONFIG_FILE;
+      let cfg = {};
+      try { cfg = JSON.parse(fs.readFileSync(p, "utf8")); } catch (e) {}
+      cfg.pairing = cfg.pairing || {};
+      cfg.pairing.publicBaseUrls = [process.env.PIAB_PUBLIC_URL];
+      fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + "\n");
+    ' || true
+
+    chown -R "${PI_USER}:${PI_USER}" "${config_dir}" 2>/dev/null || true
+    echo "[pi-in-a-box] Advertised public URL: ${PIAB_PUBLIC_URL}"
+}
+
+# ---------------------------------------------------------------------------
+# Start dashboard (backgrounded) and keep the container alive while healthy
 # ---------------------------------------------------------------------------
 start_dashboard() {
-    echo "[pi-in-a-box] Starting dashboard on port ${PIAB_PORT}..."
+    echo "[pi-in-a-box] Starting dashboard on port ${PIAB_PORT} (bind ${PIAB_BIND_HOST})..."
     echo "[pi-in-a-box] Pi home: ${PIAB_PI_HOME}"
     echo "[pi-in-a-box] Workspace: ${PIAB_WORKSPACE}"
     echo "[pi-in-a-box] Browser automation: ${PIAB_BROWSER_ENABLED}"
@@ -93,20 +126,34 @@ start_dashboard() {
     echo "[pi-in-a-box] Crew orchestration: ${PIAB_ENABLE_CREW:-false}"
     echo "[pi-in-a-box] Ralph loops: ${PIAB_ENABLE_RALPH:-false}"
 
-    # Drop to piuser and run pi-dashboard in foreground/server mode
-    exec su -s /bin/bash piuser -c "
+    # The upstream launcher prints a "readiness timeout" and exits at ~30s while
+    # the server (jiti/TS-compiled) is still cold-booting; its server child is
+    # detached and keeps booting. Run it in the background and own the lifecycle
+    # here so the container stays up through the slow start and only exits when
+    # the server is actually down.
+    su -s /bin/bash "${PI_USER}" -c "
         export HOME='${PIAB_PI_HOME}'
         export PI_HOME='${PIAB_PI_HOME}'
-        exec pi-dashboard start --port '${PIAB_PORT}' --host 0.0.0.0
-    " 2>&1 &
+        export PI_DASHBOARD_HOST='${PIAB_BIND_HOST}'
+        exec pi-dashboard start --port '${PIAB_PORT}' --host '${PIAB_BIND_HOST}'
+    " &
     DASHBOARD_PID=$!
 
-    # Wait for the dashboard to exit or be signaled
-    wait "${DASHBOARD_PID}"
-    local exit_code=$?
+    # Wait (up to ~10 min) for the server to come up past the cold-start compile.
+    for _ in $(seq 1 120); do
+        if curl -sf -o /dev/null "http://127.0.0.1:${PIAB_PORT}/api/health"; then
+            break
+        fi
+        sleep 5
+    done
 
-    echo "[pi-in-a-box] Dashboard exited with code ${exit_code}."
-    exit "${exit_code}"
+    # Stay alive while the server is healthy; exit (and let the supervisor
+    # restart) if it dies.
+    while curl -sf -o /dev/null "http://127.0.0.1:${PIAB_PORT}/api/health"; do
+        sleep 10
+    done
+
+    echo "[pi-in-a-box] server stopped; exiting."
 }
 
 # ---------------------------------------------------------------------------
@@ -120,6 +167,7 @@ main() {
 
     ensure_dirs
     configure_pi
+    seed_public_url
     start_dashboard
 }
 
