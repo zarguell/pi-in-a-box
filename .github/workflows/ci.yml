@@ -35,6 +35,9 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Clean previous state
+        run: docker compose down -v --remove-orphans 2>/dev/null || true
+
       - name: Start Compose stack
         run: |
           docker compose up -d
