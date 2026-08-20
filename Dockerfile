@@ -113,11 +113,12 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Copy installed extensions from the extensions stage
 COPY --from=extensions /root/.pi /tmp/pi-home-build
 
-# Set up non-root user
-ARG PUID=1000
-ARG PGID=1000
-RUN groupadd -g ${PGID} piuser && \
-    useradd -u ${PUID} -g piuser -m -s /bin/bash piuser
+# Set up non-root user (base image has node:1000 — create piuser with 1001)
+ARG PUID=1001
+ARG PGID=1001
+RUN groupadd -g ${PGID} piuser 2>/dev/null || true && \
+    useradd -u ${PUID} -g piuser -m -s /bin/bash piuser 2>/dev/null || \
+    usermod -g piuser -s /bin/bash piuser 2>/dev/null || true
 
 # Copy entrypoint and scripts
 COPY docker/entrypoint.sh /entrypoint.sh

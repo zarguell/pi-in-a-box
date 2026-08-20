@@ -15,8 +15,8 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        PUID: "${PUID:-1000}"
-        PGID: "${PGID:-1000}"
+        PUID: "${PUID:-1001}"
+        PGID: "${PGID:-1001}"
     image: ghcr.io/zarguell/pi-in-a-box:edge
     container_name: pi-in-a-box
     restart: unless-stopped
