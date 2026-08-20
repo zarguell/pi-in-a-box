@@ -8,7 +8,6 @@ data/
 node_modules/
 *.log
 docs/
-scripts/
 README.md
 LICENSE
 CHANGELOG.md
