@@ -6,6 +6,7 @@
 # Pi data (host-managed volumes, never committed)
 workspace/
 data/
+.pi-reactor/
 
 # Docker build artifacts
 docker-compose.override.yaml

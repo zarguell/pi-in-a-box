@@ -7,9 +7,13 @@
 #   docker compose up -d --build
 #
 # Dashboard: http://127.0.0.1:${PIAB_PORT:-8000}
+# Reactor:   daemon runs inside pi-reactor service (no public port)
 # =============================================================================
 
 services:
+  # ---------------------------------------------------------------------------
+  # Interactive Pi sessions + dashboard
+  # ---------------------------------------------------------------------------
   pi-in-a-box:
     build:
       context: .
@@ -27,6 +31,7 @@ services:
     volumes:
       - pi-home:/data/pi-home
       - dashboard-data:/data/dashboard
+      - pi-reactor:/data/pi-reactor
       - ./workspace:/workspace
 
     environment:
@@ -55,11 +60,117 @@ services:
         max-size: "10m"
         max-file: "3"
 
-    # Security: drop all capabilities, add back only what's needed
     cap_drop:
       - ALL
     cap_add:
-      - NET_RAW   # Required by some browser/network diagnostics
+      - NET_RAW
+
+    security_opt:
+      - "no-new-privileges:true"
+
+  # ---------------------------------------------------------------------------
+  # Pi Reactor — unattended scheduled/event-driven work
+  # ---------------------------------------------------------------------------
+  pi-reactor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PUID: "${PUID:-1001}"
+        PGID: "${PGID:-1001}"
+    image: ghcr.io/zarguell/pi-in-a-box:edge
+    container_name: pi-reactor
+    restart: unless-stopped
+    entrypoint: ["/entrypoint-reactor.sh"]
+
+    volumes:
+      - pi-home:/data/pi-home
+      - pi-reactor:/data/pi-reactor
+      - ./workspace:/workspace
+
+    environment:
+      - PIAB_PI_HOME=/data/pi-home
+      - PI_REACTOR_DIR=/data/pi-reactor
+      - PIAB_REACTOR_CONCURRENCY=${PIAB_REACTOR_CONCURRENCY:-2}
+      - PIAB_REACTOR_DAILY_TOKEN_CAP=${PIAB_REACTOR_DAILY_TOKEN_CAP:-}
+      - PIAB_REACTOR_RETENTION_DAYS=${PIAB_REACTOR_RETENTION_DAYS:-30}
+      - PIAB_REACTOR_SHUTDOWN_GRACE=${PIAB_REACTOR_SHUTDOWN_GRACE:-60s}
+      - PIAB_BROWSER_ENABLED=${PIAB_BROWSER_ENABLED:-false}
+      - PIAB_ENABLE_SAFETY_GUARDS=${PIAB_ENABLE_SAFETY_GUARDS:-true}
+      - PIAB_ENABLE_CREW=${PIAB_ENABLE_CREW:-false}
+      - PIAB_ENABLE_RALPH=${PIAB_ENABLE_RALPH:-false}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - FIREWORKS_API_KEY=${FIREWORKS_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+
+    healthcheck:
+      test: ["CMD", "pi-reactor", "status"]
+      interval: 60s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW
+
+    security_opt:
+      - "no-new-privileges:true"
+
+  # ---------------------------------------------------------------------------
+  # Pi Reactor Webhook — opt-in via "webhooks" profile
+  # Enable: docker compose --profile webhooks up -d
+  # ---------------------------------------------------------------------------
+  pi-reactor-webhook:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PUID: "${PUID:-1001}"
+        PGID: "${PGID:-1001}"
+    image: ghcr.io/zarguell/pi-in-a-box:edge
+    container_name: pi-reactor-webhook
+    restart: unless-stopped
+    entrypoint: ["/entrypoint-reactor-webhook.sh"]
+    profiles:
+      - webhooks
+
+    ports:
+      - "127.0.0.1:${PIAB_WEBHOOK_PORT:-8787}:8787"
+
+    volumes:
+      - pi-home:/data/pi-home
+      - pi-reactor:/data/pi-reactor
+
+    environment:
+      - PIAB_PI_HOME=/data/pi-home
+      - PI_REACTOR_DIR=/data/pi-reactor
+      - PIAB_WEBHOOK_PORT=${PIAB_WEBHOOK_PORT:-8787}
+
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8787/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    cap_drop:
+      - ALL
 
     security_opt:
       - "no-new-privileges:true"
@@ -68,4 +179,6 @@ volumes:
   pi-home:
     driver: local
   dashboard-data:
+    driver: local
+  pi-reactor:
     driver: local

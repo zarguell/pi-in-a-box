@@ -62,3 +62,29 @@ When `PIAB_BROWSER_ENABLED=true`:
 - Treat browser sessions as privileged: they can access any site your authenticated browser profile has access to.
 
 **Recommendation**: Use a dedicated browser profile for automated tasks, separate from personal browsing sessions.
+
+## Webhook security (pi-reactor)
+
+The pi-reactor webhook listener (`pi-reactor-webhook`) is opt-in via the `webhooks` Compose profile.
+
+### Threat model
+
+- **Signed payloads**: GitHub webhook signatures are verified by pi-reactor before JSON parsing. Invalid signatures are rejected with no job queued.
+- **Untrusted content**: Even after signature validation, webhook payloads contain untrusted data. Pi-reactor projects GitHub data into bounded context and provides authorization/bot-loop gates — do not defeat these safeguards.
+- **Author association**: Pi-reactor respects GitHub's `author_association` field. Configure triggers to only accept trusted collaborators.
+- **Bot-loop prevention**: Pi-reactor prevents its own webhook-triggered runs from creating infinite loops.
+- **No unsigned endpoints**: There is no generic "run this arbitrary prompt" webhook. All triggers must match specific event types, actions, and labels.
+
+### Exposure rules
+
+- Webhook service is **disabled by default** (requires `--profile webhooks`).
+- Default host binding is **loopback-only** (`127.0.0.1:8787`).
+- For public webhook delivery, use an authenticated reverse proxy (Caddy, nginx) or tunnel (Tailscale Funnel, Cloudflare Tunnel).
+- **Never** expose port 8787 directly to the internet without TLS and access controls.
+- The reactor daemon's local control socket is private to the container user.
+
+### What webhook validation does NOT protect against
+
+- **Prompt injection in issue/PR content**: A malicious issue body can contain instructions that Pi may follow. The reactor configuration constrains what Pi can do, but repository write access and Pi tool privileges remain consequential.
+- **Credential theft**: If an attacker gains container access, they can use provider API keys and notification sink credentials.
+- **Denial of service**: An attacker with webhook access can queue jobs that consume your daily token budget.

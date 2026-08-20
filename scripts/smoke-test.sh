@@ -25,6 +25,7 @@ check() {
 echo "[smoke-test] Checking binaries..."
 check "pi is on PATH" command -v pi
 check "pi-dashboard is on PATH" command -v pi-dashboard
+check "pi-reactor is on PATH" command -v pi-reactor
 check "node is on PATH" command -v node
 check "git is on PATH" command -v git
 check "python3 is on PATH" command -v python3
@@ -91,6 +92,12 @@ if pi install --list 2>/dev/null | grep -q "btw"; then
     echo "  [PASS] @piex-dev/btw installed"
 else
     echo "  [WARN] @piex-dev/btw not in list (may still work)"
+fi
+
+if pi install --list 2>/dev/null | grep -q "pi-reactor"; then
+    echo "  [PASS] pi-reactor installed"
+else
+    echo "  [WARN] pi-reactor not in list (may still work)"
 fi
 
 # --- Result ---

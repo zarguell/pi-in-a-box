@@ -24,8 +24,28 @@ echo " pi-in-a-box doctor"
 echo "============================================="
 echo ""
 
+# --- Pi Reactor ---
+echo "[1/8] Pi Reactor"
+if command -v pi-reactor &>/dev/null; then
+    pass "pi-reactor found: $(pi-reactor --version 2>/dev/null || echo 'unknown version')"
+else
+    fail "pi-reactor not found on PATH"
+fi
+
+if pi install --list 2>/dev/null | grep -q "pi-reactor"; then
+    pass "pi-reactor extension installed"
+else
+    warn "pi-reactor extension not found"
+fi
+
+if [[ -d "${PI_REACTOR_DIR:-/data/pi-reactor}" ]]; then
+    pass "Reactor data directory exists: ${PI_REACTOR_DIR:-/data/pi-reactor}"
+else
+    warn "Reactor data directory not found"
+fi
+
 # --- Pi ---
-echo "[1/7] Pi agent"
+echo "[2/8] Pi agent"
 if command -v pi &>/dev/null; then
     pass "pi found: $(pi --version 2>/dev/null || echo 'unknown version')"
 else
@@ -33,7 +53,7 @@ else
 fi
 
 # --- Node.js ---
-echo "[2/7] Node.js"
+echo "[3/8] Node.js"
 if command -v node &>/dev/null; then
     pass "Node.js found: $(node --version)"
 else
@@ -41,7 +61,7 @@ else
 fi
 
 # --- Dashboard ---
-echo "[3/7] Dashboard"
+echo "[4/8] Dashboard"
 if command -v pi-dashboard &>/dev/null; then
     pass "pi-dashboard found"
 else
@@ -56,7 +76,7 @@ else
 fi
 
 # --- Extensions ---
-echo "[4/7] Extensions"
+echo "[5/8] Extensions"
 if pi install --list 2>/dev/null | grep -q "pi-subagents"; then
     pass "pi-subagents installed"
 else
@@ -110,7 +130,7 @@ else
 fi
 
 # --- Persistence ---
-echo "[5/7] Persistence"
+echo "[6/8] Persistence"
 for dir in /data/pi-home /data/dashboard /workspace; do
     if [[ -d "${dir}" ]]; then
         if [[ -w "${dir}" ]]; then
@@ -132,7 +152,7 @@ if [[ "${PIAB_BROWSER_ENABLED:-false}" == "true" ]]; then
 fi
 
 # --- Git ---
-echo "[6/7] Git"
+echo "[7/8] Git"
 if command -v git &>/dev/null; then
     pass "git found: $(git --version)"
 else
@@ -140,7 +160,7 @@ else
 fi
 
 # --- Python ---
-echo "[7/7] Python"
+echo "[8/8] Python"
 if command -v python3 &>/dev/null; then
     pass "python3 found: $(python3 --version)"
 else

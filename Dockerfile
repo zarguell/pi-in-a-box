@@ -20,6 +20,7 @@ ARG BROWSER_NATIVE_VERSION=0.3.0
 ARG SKILLFUL_VERSION=latest
 ARG PROMPT_TEMPLATE_MODEL_VERSION=latest
 ARG BTW_VERSION=latest
+ARG REACTOR_VERSION=0.2.3
 ARG TARGETPLATFORM
 
 # Install build essentials for native npm modules
@@ -28,10 +29,11 @@ RUN apt-get update && \
         python3 make g++ git ca-certificates curl && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Pi and the dashboard globally
+# Install Pi, dashboard, and reactor globally
 RUN npm install -g --ignore-scripts \
     "@earendil-works/pi-coding-agent@${PI_VERSION}" \
-    "@blackbelt-technology/pi-agent-dashboard@${DASHBOARD_VERSION}"
+    "@blackbelt-technology/pi-agent-dashboard@${DASHBOARD_VERSION}" \
+    "pi-reactor@${REACTOR_VERSION}"
 
 # ---------------------------------------------------------------------------
 # Stage 2: Extension installer — pi must be on PATH to run `pi install`
@@ -44,6 +46,7 @@ ARG BROWSER_NATIVE_VERSION=0.3.0
 ARG SKILLFUL_VERSION=latest
 ARG PROMPT_TEMPLATE_MODEL_VERSION=latest
 ARG BTW_VERSION=latest
+ARG REACTOR_VERSION=0.2.3
 
 # Extensions install into ~/.pi/ which is the user's home.
 # We install as root during build, then copy the result.
@@ -53,16 +56,16 @@ ENV HOME=/root
 # Core bundle (always installed):
 #   pi-subagents: subagent delegation
 #   @capyup/pi-goal: durable goal execution
-#   pi-agent-browser-native: browser automation
 #   pi-skillful: project/ancestor skill discovery and invocation
 #   pi-prompt-template-model: slash-command model/skill workflows
 #   @piex-dev/btw: out-of-band questions without session pollution
+#   pi-reactor: cron/webhook triggers, durable queue, notifications
 RUN pi install "npm:pi-subagents@${SUBAGENTS_VERSION}" && \
     pi install "npm:@capyup/pi-goal@${GOAL_VERSION}" && \
-    pi install "npm:pi-agent-browser-native@${BROWSER_NATIVE_VERSION}" && \
     pi install "npm:pi-skillful@${SKILLFUL_VERSION}" && \
     pi install "npm:pi-prompt-template-model@${PROMPT_TEMPLATE_MODEL_VERSION}" && \
     pi install "npm:@piex-dev/btw@${BTW_VERSION}" && \
+    pi install "npm:pi-reactor@${REACTOR_VERSION}" && \
     echo "All extensions installed successfully" && \
     pi --version
 
@@ -122,12 +125,15 @@ RUN groupadd -g ${PGID} piuser 2>/dev/null || true && \
 
 # Copy entrypoint and scripts
 COPY docker/entrypoint.sh /entrypoint.sh
+COPY docker/entrypoint-reactor.sh /entrypoint-reactor.sh
+COPY docker/entrypoint-reactor-webhook.sh /entrypoint-reactor-webhook.sh
 COPY docker/install-extensions.sh /usr/local/bin/install-extensions.sh
 COPY scripts/doctor.sh /usr/local/bin/pi-in-a-box-doctor
-RUN chmod +x /entrypoint.sh /usr/local/bin/install-extensions.sh /usr/local/bin/pi-in-a-box-doctor
+RUN chmod +x /entrypoint.sh /entrypoint-reactor.sh /entrypoint-reactor-webhook.sh \
+    /usr/local/bin/install-extensions.sh /usr/local/bin/pi-in-a-box-doctor
 
 # Create persistent directory structure
-RUN mkdir -p /data/pi-home /data/dashboard /data/browser /workspace && \
+RUN mkdir -p /data/pi-home /data/dashboard /data/browser /data/pi-reactor /workspace && \
     chown -R piuser:piuser /data /workspace
 
 # Copy the pi-home build artifacts to final location
@@ -138,6 +144,7 @@ RUN cp -a /tmp/pi-home-build/. /data/pi-home/ && \
 # Set environment
 ENV HOME=/data/pi-home
 ENV PI_HOME=/data/pi-home
+ENV PI_REACTOR_DIR=/data/pi-reactor
 ENV PATH="/usr/local/bin:${HOME}/.npm-global/bin:${PATH}"
 ENV NODE_ENV=production
 

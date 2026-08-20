@@ -1,0 +1,31 @@
+# =============================================================================
+# pi-in-a-box — Webhook Ingress Example
+# =============================================================================
+# This file shows how to expose pi-reactor-webhook through an authenticated
+# reverse proxy. DO NOT use this for direct public exposure without TLS
+# and access controls.
+#
+# Usage with Caddy (recommended):
+#   1. Enable the webhooks profile in your .env or override
+#   2. Use this file as a reference for your Caddy/nginx config
+#   3. Point your domain's reverse proxy to http://pi-reactor-webhook:8787
+#
+# Usage with Tailscale Funnel:
+#   tailscale funnel --bg 8787 http://localhost:8787
+#   Then configure GitHub webhook URL to your Tailscale funnel URL
+#
+# WARNING: This does NOT provide authentication. Use an identity-aware proxy
+# (Cloudflare Access, Tailscale, etc.) or add auth middleware.
+# =============================================================================
+
+# To enable webhooks, run:
+#   docker compose --profile webhooks up -d
+#
+# The webhook listener binds to 127.0.0.1:8787 by default.
+# Change PIAB_WEBHOOK_PORT in .env if needed.
+#
+# Example Caddyfile for reverse proxy:
+#
+#   your-domain.com {
+#       reverse_proxy pi-reactor-webhook:8787
+#   }

@@ -47,6 +47,7 @@ Self-hosted, Docker-first [Pi](https://pi.dev) coding agent environment with a w
 - **Skill discovery** — project-level skills via `pi-skillful`.
 - **Prompt workflows** — model/skill slash-commands via `pi-prompt-template-model`.
 - **Out-of-band questions** — ask side questions without polluting context via `@piex-dev/btw`.
+- **Unattended work** — cron schedules, GitHub webhooks, durable queue via `pi-reactor`.
 - **Browser automation** — optional Chromium + `pi-agent-browser-native`.
 - **Safety guardrails** — optional `safe-coder` for risky repos.
 - **Multi-arch** — `linux/amd64` and `linux/arm64` images on GHCR.
@@ -98,6 +99,41 @@ open http://127.0.0.1:8000
 | `safe-coder` | `PIAB_ENABLE_SAFETY_GUARDS=true` | Project-specific safety guardrails |
 | `pi-crew` | `PIAB_ENABLE_CREW=true` | Worktrees, task graphs, multi-agent teams |
 | `pi-extensions` | `PIAB_ENABLE_RALPH=true` | Ralph-style autonomous loops, usage dashboard |
+
+## Unattended work (pi-reactor)
+
+Pi-reactor turns Pi into an event-driven work engine. It runs alongside the dashboard — use the dashboard for interactive sessions, pi-reactor for bounded unattended runs.
+
+```bash
+# Configure from inside a Pi session:
+# "every morning at nine, summarise yesterday's commits and send it to Telegram"
+
+# Or via CLI:
+docker compose exec pi-reactor pi-reactor agent add report \
+  --cwd /workspace/my-project --model anthropic/claude-sonnet-5
+docker compose exec pi-reactor pi-reactor trigger add nightly \
+  --schedule "0 9 * * *" --timezone "America/New_York" \
+  --agent report --task "Summarize yesterday's commits." --notify tg --dry-run
+```
+
+### GitHub webhooks (opt-in)
+
+```bash
+# Enable the webhook profile
+docker compose --profile webhooks up -d
+
+# Store the webhook secret
+docker compose exec pi-reactor sh -c 'printf "%s" "$GITHUB_WEBHOOK_SECRET" | pi-reactor secret set github webhookSecret'
+
+# Add a label-triggered job
+docker compose exec pi-reactor pi-reactor trigger add fix-on-label \
+  --event github --github-event issues --github-action labeled \
+  --github-label "pi:fix" --agent coder --task "Fix the issue." --notify slack
+```
+
+Expose the webhook through Tailscale Funnel, Caddy, or Cloudflare Tunnel — never directly to the internet.
+
+See [docs/reactor.md](docs/reactor.md) for the full guide.
 
 ## Adding projects
 
@@ -237,6 +273,7 @@ See [docs/security.md](docs/security.md) for the full threat model.
 
 - [Security guide](docs/security.md) — threat model, access patterns, privilege boundaries
 - [Configuration reference](docs/configuration.md) — every supported variable
+- [Pi Reactor guide](docs/reactor.md) — unattended work, cron, webhooks, notifications
 - [Troubleshooting](docs/troubleshooting.md) — common issues and fixes
 
 ## License

@@ -59,6 +59,18 @@ Override pinned versions via environment variables:
 
 **Restart required**: Version overrides require `docker compose up -d --build`.
 
+## Pi Reactor (Unattended Work)
+
+| Variable | Default | Secret | Description |
+|----------|---------|--------|-------------|
+| `PIAB_REACTOR_CONCURRENCY` | `2` | No | Max parallel reactor jobs. |
+| `PIAB_REACTOR_DAILY_TOKEN_CAP` | (unset) | No | Optional daily token spending limit. |
+| `PIAB_REACTOR_RETENTION_DAYS` | `30` | No | How long to keep run history. |
+| `PIAB_REACTOR_SHUTDOWN_GRACE` | `60s` | No | Time to drain jobs on SIGTERM. |
+| `PIAB_WEBHOOK_PORT` | `8787` | No | Webhook listener port (profile: webhooks). |
+
+**Restart required**: Reactor configuration changes require `docker compose up -d`.
+
 ## User/Group
 
 | Variable | Default | Description |
@@ -79,6 +91,7 @@ Override pinned versions via environment variables:
 | `pi-skillful` | Project-level skill discovery and invocation |
 | `pi-prompt-template-model` | Slash-command model/skill workflows |
 | `@piex-dev/btw` | Out-of-band questions without session pollution |
+| `pi-reactor` | Cron/webhook triggers, durable queue, notifications |
 
 ### Optional
 

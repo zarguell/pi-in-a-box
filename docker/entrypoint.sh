@@ -50,7 +50,9 @@ ensure_dirs() {
 
     for dir in "${dirs[@]}"; do
         mkdir -p "${dir}"
-        chown -R "$(id -u):$(id -g)" "${dir}"
+        # Best-effort chown: named volumes may have root-owned files from build.
+        # The container user can read them; chown errors are non-fatal.
+        chown -R "$(id -u):$(id -g)" "${dir}" 2>/dev/null || true
     done
 }
 
