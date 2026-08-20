@@ -31,7 +31,7 @@ jobs:
           context: .
           push: false
           load: true
-          tags: pi-in-a-box:ci
+          tags: pi-in-a-box:ci,ghcr.io/zarguell/pi-in-a-box:edge
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

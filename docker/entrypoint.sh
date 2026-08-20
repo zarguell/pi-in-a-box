@@ -69,6 +69,16 @@ ensure_dirs() {
         # user before writing, so root-owned dirs cause EACCES on first write.
         chown -R "${PI_USER}:${PI_USER}" "${dir}" 2>/dev/null || true
     done
+
+    # Seed pi extensions from the baked image copy (/usr/local/share/pi-seed)
+    # into the pi-home volume on first boot, idempotently. Docker's named-
+    # volume copy-up races when two services share the same volume (both
+    # containers are created in parallel → symlink EEXIST from cp -a over
+    # an already-populated volume). Use cp -n to never overwrite live data.
+    if [[ -d /usr/local/share/pi-seed ]]; then
+        cp -a -n /usr/local/share/pi-seed/. "${PIAB_PI_HOME}/" 2>/dev/null || true
+        chown -R "${PI_USER}:${PI_USER}" "${PIAB_PI_HOME}" 2>/dev/null || true
+    fi
 }
 
 # ---------------------------------------------------------------------------
@@ -175,12 +185,13 @@ suppress_stale_plugin_banner() {
         fi
     fi
 
-    # Verify the fix actually reconciled the hashes (compare baked hash in
-    # the served JS with /api/health once the server is up is too late here
-    # at startup — do it after start_dashboard begins). If it did not, fall
-    # back to rewriting the minified stale-banner compare in the served JS
-    # (t(d.bundleHash!==e2)) so it ignores the empty-registry hash.
+    # If the bridge already exists (restart with warm volume) there is
+    # nothing to do — the previous boot already healed the hash; no JS
+    # patch is needed.
     if [[ "${installed}" == "true" ]]; then
+        return 0
+    fi
+    if [[ -d "${plugins_target}" ]] && [[ -n "$(ls -A "${plugins_target}" 2>/dev/null)" ]]; then
         return 0
     fi
 

@@ -136,10 +136,15 @@ RUN chmod +x /entrypoint.sh /entrypoint-reactor.sh /entrypoint-reactor-webhook.s
 RUN mkdir -p /data/pi-home /data/dashboard /data/browser /data/pi-reactor /workspace && \
     chown -R piuser:piuser /data /workspace
 
-# Copy the pi-home build artifacts to final location
-RUN cp -a /tmp/pi-home-build/. /data/pi-home/ && \
+# Keep pi extensions as a seed outside the volume mount point. Copying
+# baked files directly into /data/pi-home at build time causes a Docker
+# volume copy-up race when two services share the same named volume
+# (compose up creates both containers in parallel → symlink EEXIST).
+RUN mkdir -p /usr/local/share/pi-seed && \
+    cp -a /tmp/pi-home-build/. /usr/local/share/pi-seed/ && \
     rm -rf /tmp/pi-home-build && \
-    chown -R piuser:piuser /data/pi-home
+    cp -a /usr/local/share/pi-seed/. /data/pi-home/ && \
+    chown -R piuser:piuser /data/pi-home /usr/local/share/pi-seed
 
 # Set environment
 ENV HOME=/data/pi-home
