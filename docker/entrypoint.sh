@@ -151,33 +151,37 @@ seed_trusted_bridge() {
 # Upstream 0.7.0 dashboard bakes 8 plugins into pi-dashboard-web's build
 # hash (61102e9) but runtime discoverPlugins() in the Docker image finds 0
 # (the server package has no plugin deps) so /api/health.bundleHash is
-# always 4f53cda and the amber "Dashboard plugins were updated" banner is
-# permanently stuck — Refresh can never reconcile it, dismiss is per-tab.
-# Fix by bridging the missing plugins into the server's discovery path
-# (installed plugins dir) so runtime hash matches the baked one. Falls
-# back to patching the served index.js if node_modules layout changes.
+# 4f53cda and the amber "Dashboard plugins were updated" banner is stuck.
+# Bridging all 8 puts the server in recovery (kb/flows-anthropic-bridge
+# need deps absent from the image, e.g. ajv). So bridge only the 6
+# server-safe plugins (→ hash 7bfc42e) and patch the banner JS to ignore
+# both empty and 6-plugin hashes. Verified: neither NODE_PATH nor
+# installing the missing deps fixes the server load — the deps genuinely
+# aren't on the symlinked path. Keeps Pi spawn from REGISTER_TIMEOUT.
 # ---------------------------------------------------------------------------
 suppress_stale_plugin_banner() {
     local dash_root="/usr/local/lib/node_modules/@blackbelt-technology/pi-agent-dashboard"
     local plugins_target="${PIAB_PI_HOME}/.pi/dashboard/plugins"
     local installed=false
 
-    # 1) Bridge the bundled dashboard plugins into the "installed plugins"
-    #    dir that discoverPlugins() scans so the server hash matches the
-    #    baked client hash (61102e9 == 61102e9) and the staleness banner
-    #    clears. Dockerfile now installs the two peer deps (pi-dashboard-kb,
-    #    dashboard-plugin-runtime) globally so the 2 server-heavy plugins
-    #    (kb, flows-anthropic-bridge) resolve without MODULE_NOT_FOUND when
-    #    bridged. Remove any stale 6-plugin allowlist artefacts from the
-    #    previous workaround.
-    rm -f "${plugins_target}/.pi-in-a-box-bridge-6" 2>/dev/null || true
+    for bad in pi-dashboard-kb-plugin pi-dashboard-flows-anthropic-bridge-plugin; do
+        rm -f "${plugins_target:?}/${bad}" 2>/dev/null || true
+        rm -rf "${plugins_target:?}/${bad}" 2>/dev/null || true
+    done
+    local allow_server_plugins=(
+        "pi-dashboard-automation-plugin"
+        "pi-dashboard-flows-plugin"
+        "pi-dashboard-goal-plugin"
+        "pi-dashboard-hermes-memory-plugin"
+        "pi-dashboard-roles-plugin"
+        "pi-dashboard-subagents-plugin"
+    )
     if [[ -d "${dash_root}/node_modules/@blackbelt-technology/pi-dashboard-web" ]]; then
         mkdir -p "${plugins_target}"
         local any=false
-        for pkg in "${dash_root}"/node_modules/@blackbelt-technology/pi-dashboard-*-plugin; do
+        for name in "${allow_server_plugins[@]}"; do
+            local pkg="${dash_root}/node_modules/@blackbelt-technology/${name}"
             [[ -d "${pkg}" ]] || continue
-            local name
-            name="$(basename "${pkg}")"
             local link="${plugins_target}/${name}"
             if [[ ! -e "${link}" ]]; then
                 ln -s "${pkg}" "${link}" 2>/dev/null || cp -a "${pkg}" "${link}" 2>/dev/null || true
@@ -187,37 +191,34 @@ suppress_stale_plugin_banner() {
         if [[ "${any}" == "true" ]]; then
             installed=true
             chown -R "${PI_USER}:${PI_USER}" "${plugins_target}" 2>/dev/null || true
-            echo "[pi-in-a-box] bridged dashboard plugins into ${plugins_target}"
+            echo "[pi-in-a-box] bridged dashboard plugins into ${plugins_target} (6/8; kb+bridge excluded)"
         fi
-    fi
-
-    # If the bridge already exists (restart with warm volume) there is
-    # nothing to do — the previous boot already healed the hash; no JS
-    # patch is needed.
-    if [[ "${installed}" == "true" ]]; then
-        return 0
-    fi
-    if [[ -d "${plugins_target}" ]] && [[ -n "$(ls -A "${plugins_target}" 2>/dev/null)" ]]; then
-        return 0
     fi
 
     local idx="${dash_root}/node_modules/@blackbelt-technology/pi-dashboard-web/dist/assets/index-CWy7aTzt.js"
     [[ -f "${idx}" ]] || return 0
-    grep -q "pi-in-a-box: suppress empty-registry staleness" "${idx}" 2>/dev/null && return 0
     node -e '
       const fs = require("fs");
       const p = process.argv[1];
-      const EMPTY = "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945";
+      if (fs.readFileSync(p, "utf8").includes("pi-in-a-box: suppress")) process.exit(0);
+      const EMPTY6 = "7bfc42ee6b9d0c3f8f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945";
+      const EMPTY0 = "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945";
       let s = fs.readFileSync(p, "utf8");
       const before = s;
       s = s.replace(
         /t\(d\.bundleHash!==e2\)/g,
-        `t(d.bundleHash!==e2&&d.bundleHash!=="${EMPTY}")`
+        `t(d.bundleHash!==e2&&d.bundleHash!=="${EMPTY6}"&&d.bundleHash!=="${EMPTY0}")`
       );
+      if (s === before) {
+        s = s.replace(
+          /e\(d\.bundleHash!==[^)]+\)/g,
+          (m) => m.replace(/d\.bundleHash!==[^)]+/, `d.bundleHash!==e2&&d.bundleHash!=="${EMPTY6}"&&d.bundleHash!=="${EMPTY0}"`)
+        );
+      }
       if (s !== before) {
-        s = "/* pi-in-a-box: suppress empty-registry staleness (upstream 0.7.0) */\n" + s;
+        s = "/* pi-in-a-box: suppress empty-registry staleness (upstream 0.7.0, 6/8 bridge) */\n" + s;
         fs.writeFileSync(p, s);
-        console.log("[pi-in-a-box] patched stale-plugin banner (empty-registry hash)");
+        console.log("[pi-in-a-box] patched stale-plugin banner (6/8 bridge)");
       }
     ' "${idx}" 2>&1 || true
 }
