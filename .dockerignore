@@ -1,0 +1,17 @@
+.git
+.github
+.env
+.env.local
+.env.*.local
+workspace/
+data/
+node_modules/
+*.log
+docs/
+scripts/
+README.md
+LICENSE
+CHANGELOG.md
+CONTRIBUTING.md
+compose.yaml
+compose.lan.example.yaml

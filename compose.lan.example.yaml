@@ -1,0 +1,15 @@
+# =============================================================================
+# pi-in-a-box — LAN Access Compose Override
+# =============================================================================
+# WARNING: This exposes the dashboard to your local network WITHOUT authentication.
+# Only use on trusted private networks. For internet exposure, use Tailscale,
+# Cloudflare Access, or an authenticated reverse proxy (nginx, Caddy, etc.).
+#
+# Usage:
+#   docker compose -f compose.yaml -f compose.lan.example.yaml up -d --build
+# =============================================================================
+
+services:
+  pi-in-a-box:
+    ports:
+      - "${PIAB_PORT:-8000}:8000"

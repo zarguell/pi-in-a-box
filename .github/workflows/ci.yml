@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Validate Dockerfile syntax
+        run: docker build --check .
+
+      - name: Validate Compose config
+        run: docker compose config --quiet
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: pi-in-a-box:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Start Compose stack
+        run: |
+          docker compose up -d
+          sleep 10
+        env:
+          PIAB_PORT: "8000"
+
+      - name: Check service health
+        run: |
+          for i in $(seq 1 30); do
+            if docker compose ps --format json | grep -q '"Health":"healthy"'; then
+              echo "Service is healthy"
+              exit 0
+            fi
+            echo "Waiting for health check... ($i/30)"
+            sleep 5
+          done
+          echo "Service did not become healthy in time"
+          docker compose logs
+          exit 1
+
+      - name: Run smoke tests
+        run: |
+          docker compose exec -T pi-in-a-box bash /usr/local/bin/pi-in-a-box-doctor || true
+          docker compose exec -T pi-in-a-box bash /usr/local/bin/pi-in-a-box-doctor
+
+      - name: Upload logs on failure
+        if: failure()
+        run: docker compose logs > /tmp/container-logs.txt 2>&1 || true
+
+      - name: Upload logs artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-logs
+          path: /tmp/container-logs.txt
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v

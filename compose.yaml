@@ -1,0 +1,71 @@
+# =============================================================================
+# pi-in-a-box — Docker Compose
+# =============================================================================
+# Default: loopback-only access, named volumes, non-root.
+#
+# Usage:
+#   docker compose up -d --build
+#
+# Dashboard: http://127.0.0.1:${PIAB_PORT:-8000}
+# =============================================================================
+
+services:
+  pi-in-a-box:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PUID: "${PUID:-1000}"
+        PGID: "${PGID:-1000}"
+    image: ghcr.io/zarguell/pi-in-a-box:edge
+    container_name: pi-in-a-box
+    restart: unless-stopped
+
+    ports:
+      - "127.0.0.1:${PIAB_PORT:-8000}:8000"
+
+    volumes:
+      - pi-home:/data/pi-home
+      - dashboard-data:/data/dashboard
+      - ./workspace:/workspace
+
+    environment:
+      - PIAB_PORT=${PIAB_PORT:-8000}
+      - PIAB_BROWSER_ENABLED=${PIAB_BROWSER_ENABLED:-false}
+      - PIAB_ENABLE_SAFETY_GUARDS=${PIAB_ENABLE_SAFETY_GUARDS:-true}
+      - PIAB_ENABLE_CREW=${PIAB_ENABLE_CREW:-false}
+      - PIAB_ENABLE_RALPH=${PIAB_ENABLE_RALPH:-false}
+      # Pass through provider API keys from .env
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - FIREWORKS_API_KEY=${FIREWORKS_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8000/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Security: drop all capabilities, add back only what's needed
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW   # Required by some browser/network diagnostics
+
+    security_opt:
+      - "no-new-privileges:true"
+
+volumes:
+  pi-home:
+    driver: local
+  dashboard-data:
+    driver: local
