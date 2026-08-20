@@ -91,11 +91,12 @@ start_dashboard() {
     echo "[pi-in-a-box] Crew orchestration: ${PIAB_ENABLE_CREW:-false}"
     echo "[pi-in-a-box] Ralph loops: ${PIAB_ENABLE_RALPH:-false}"
 
-    # Run pi-dashboard in foreground/server mode
-    exec pi-dashboard start \
-        --port "${PIAB_PORT}" \
-        --host 0.0.0.0 \
-        2>&1 &
+    # Drop to piuser and run pi-dashboard in foreground/server mode
+    exec su -s /bin/bash piuser -c "
+        export HOME='${PIAB_PI_HOME}'
+        export PI_HOME='${PIAB_PI_HOME}'
+        exec pi-dashboard start --port '${PIAB_PORT}' --host 0.0.0.0
+    " 2>&1 &
     DASHBOARD_PID=$!
 
     # Wait for the dashboard to exit or be signaled

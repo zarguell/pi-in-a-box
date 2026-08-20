@@ -148,4 +148,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -sf http://127.0.0.1:8000/ > /dev/null || exit 1
 
+# Entrypoint runs as root to set up volumes/permissions, then drops to piuser
+USER root
 ENTRYPOINT ["/entrypoint.sh"]
