@@ -113,6 +113,19 @@ RUN apt-get update && \
 COPY --from=builder /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=builder /usr/local/bin /usr/local/bin
 
+# Remove workspace plugins that ship only raw TypeScript (no compiled JS).
+# Their package.json "exports" fields map to ./src/*.ts files which require()
+# cannot resolve — Node's exports resolution finds the path but cannot load
+# .ts files without a TypeScript-aware resolver, and jiti does not intercept
+# subpath-exports resolution. This crashes the Pi agent on spawn (it loads
+# these as extensions in standalone fallback mode) and causes "Cannot find
+# module" errors in the dashboard plugin-loader. The 6 server-safe plugins
+# (bridged by the entrypoint) load fine; only these 2 have broken server
+# entries. Upstream fix: publish workspace packages with compiled dist/.
+RUN rm -rf /usr/local/lib/node_modules/@blackbelt-technology/pi-dashboard-kb-plugin \
+           /usr/local/lib/node_modules/@blackbelt-technology/pi-dashboard-flows-anthropic-bridge-plugin \
+           /usr/local/lib/node_modules/@blackbelt-technology/pi-dashboard-kb
+
 # Copy installed extensions from the extensions stage
 COPY --from=extensions /root/.pi /tmp/pi-home-build
 
