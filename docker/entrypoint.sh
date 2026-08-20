@@ -162,9 +162,15 @@ suppress_stale_plugin_banner() {
     local plugins_target="${PIAB_PI_HOME}/.pi/dashboard/plugins"
     local installed=false
 
-    # 1) Bridge the 8 bundled plugins into the "installed plugins" dir that
-    #    discoverPlugins() scans (second search path after monorepo packages/).
-    #    Without this the banner is always stuck on Docker/npm installs.
+    # 1) Bridge the bundled dashboard plugins into the "installed plugins"
+    #    dir that discoverPlugins() scans so the server hash matches the
+    #    baked client hash (61102e9 == 61102e9) and the staleness banner
+    #    clears. Dockerfile now installs the two peer deps (pi-dashboard-kb,
+    #    dashboard-plugin-runtime) globally so the 2 server-heavy plugins
+    #    (kb, flows-anthropic-bridge) resolve without MODULE_NOT_FOUND when
+    #    bridged. Remove any stale 6-plugin allowlist artefacts from the
+    #    previous workaround.
+    rm -f "${plugins_target}/.pi-in-a-box-bridge-6" 2>/dev/null || true
     if [[ -d "${dash_root}/node_modules/@blackbelt-technology/pi-dashboard-web" ]]; then
         mkdir -p "${plugins_target}"
         local any=false

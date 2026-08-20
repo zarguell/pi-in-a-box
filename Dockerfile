@@ -30,9 +30,14 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Pi, dashboard, and reactor globally
+# Also install the two peer deps required by kb/flows-bridge server entries
+# so the 8/8 plugin hash matches and those servers load without
+# MODULE_NOT_FOUND when bridged from ~/.pi/dashboard/plugins.
 RUN npm install -g --ignore-scripts \
     "@earendil-works/pi-coding-agent@${PI_VERSION}" \
     "@blackbelt-technology/pi-agent-dashboard@${DASHBOARD_VERSION}" \
+    "@blackbelt-technology/pi-dashboard-kb@${DASHBOARD_VERSION}" \
+    "@blackbelt-technology/dashboard-plugin-runtime@${DASHBOARD_VERSION}" \
     "pi-reactor@${REACTOR_VERSION}"
 
 # ---------------------------------------------------------------------------
