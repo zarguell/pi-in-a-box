@@ -63,7 +63,11 @@ services:
     cap_drop:
       - ALL
     cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
       - NET_RAW
+      - SETGID
+      - SETUID
 
     security_opt:
       - "no-new-privileges:true"
@@ -121,7 +125,11 @@ services:
     cap_drop:
       - ALL
     cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
       - NET_RAW
+      - SETGID
+      - SETUID
 
     security_opt:
       - "no-new-privileges:true"
@@ -171,6 +179,12 @@ services:
 
     cap_drop:
       - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - NET_RAW
+      - SETGID
+      - SETUID
 
     security_opt:
       - "no-new-privileges:true"
